@@ -4,7 +4,7 @@
 #include <cstdint> // for uint32_t
 
 // Define an enumeration for opcodes used in a virtual machine or assembly language adding comments between different opcode sections for readability.
-enum class enumOpcode : uint32_t {
+enum class Opcode : uint32_t {
     // Arithmetic Operations
     Incr = 1,
     Addi = 2,
