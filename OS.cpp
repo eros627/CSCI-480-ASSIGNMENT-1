@@ -8,14 +8,14 @@ int main(int argc, char** argv) {
         std::cerr << "Usage: " << argv[0] << " program.asm\n";
         return 1;
     }
-    std::cerr << "OS: Loading program file: " << argv[1] << "\n";
+   // std::cerr << "OS: Loading program file: " << argv[1] << "\n";
     MMU mmu(64 * 1024);
     CPU cpu(mmu);
 
     Program prog;
     prog.loadFromFile(argv[1]);
 
-    std::cerr << "OS: Program size (bytes): " << prog.sizeBytes() << "\n";
+    //std::cerr << "OS: Program size (bytes): " << prog.sizeBytes() << "\n";
 
     uint32_t base = 0x1000;
     uint32_t stackTop = 0x9000;
