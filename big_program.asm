@@ -1,0 +1,33 @@
+movi r1, #0
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+incr r1
+printr r1
+exit

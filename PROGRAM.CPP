@@ -27,9 +27,28 @@ void Program::loadFromFile(const std::string& path) {
     }
 }
 
-void Program::loadIntoMemory(MMU& mmu, uint32_t baseAddr) const {
-    for (uint32_t i = 0; i < bytes_.size(); ++i) {
-        mmu.write8(baseAddr + i, bytes_[i]);
+void Program::loadIntoMemory(MMU& mmu, uint32_t baseAddr) const 
+{
+    uint32_t lastvpage = 0xFFFFFFFF;
+    for (uint32_t i = 0; i < bytes_.size(); ++i) 
+    {
+        
+        uint32_t vaddr = baseAddr + i;
+        uint32_t vpage = vaddr >> 8;
+
+        if (vpage != lastvpage)
+        {
+            //ensure mapping exists for this vpage, allocate if needed
+            try {
+                mmu.getPhysPage(vpage);
+            } catch (const std::runtime_error&) 
+            {
+                mmu.allocAndMap(vpage);
+                lastvpage = vpage;
+
+            }
+        }
+        mmu.write8(vaddr, bytes_[i]);
     }
 }
 
