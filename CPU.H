@@ -3,46 +3,48 @@
 
 #include <cstdint>
 #include <array>
+
 #include "MMU.H"
 #include "ENUMOPCODE.H"
-
-
+#include "PCB.h"
+#include "trap.h"
 
 class CPU {
+
 public:
-    CPU(MMU & mmu); // Constructor that takes a reference to an MMU object
 
-    void SetIP(uint32_t ip); // Set the instruction pointer
+    CPU(MMU & mmu);
 
-    void SetSP(uint32_t sp); // Set the stack pointer
+    void SetIP(uint32_t ip);
+    void SetSP(uint32_t sp);
 
-    void Run(uint64_t maxsteps = 1'000'000); // Execute instructions
+    Trap step();
 
-    void step();// Execute a single instruction
+    void saveTo(PCB& out) const;
+    void loadFrom(const PCB& in);
 
-    int64_t getReg(uint32_t r) const; // Get the value of a register
+    int64_t getReg(uint32_t r) const;
 
-    private:
+private:
 
-    MMU & mmu; // Reference to the memory management unit
+    MMU & mmu;
 
-    array<int64_t, 16> regs_{}; // General-purpose registers
+    std::array<int64_t, 16> regs_{};
 
-    uint32_t ip_ = 0; // Instruction pointer
-    uint32_t sp_ = 0; // Stack pointer
+    uint32_t ip_ = 0;
+    uint32_t sp_ = 0;
 
-    // flags for CMP instruction
     bool zeroFlag_ = false;
     bool signFlag_ = false;
-    bool running_ = true; // CPU running state
 
-    // Helper: validate register index is 1..10
+    bool running_ = true;
+
     void checkReg(uint32_t r) const;
 
-    // Fetch the 3-word instruction at current IP (12 bytes)
     void fetch(uint32_t& rawOpcode, uint32_t& opA, uint32_t& opB);
 
-    // Execute one decoded instruction
-    void execute(Opcode opcode, uint32_t opA, uint32_t opB);
+    Trap execute(Opcode opcode, uint32_t opA, uint32_t opB);
+
 };
-#endif // CPU_H
+
+#endif

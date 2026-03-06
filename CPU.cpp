@@ -36,7 +36,7 @@ void CPU :: Run(uint64_t maxsteps) // Execute instructions
     }
 }
 
-void CPU :: step() //  Execute a single instruction
+Trap CPU::step()  // instead of void
 {
     uint32_t rawOpcode = 0, opA = 0, opB = 0;
     fetch(rawOpcode, opA, opB);
@@ -313,6 +313,24 @@ void CPU :: execute(Opcode opcode, uint32_t opA, uint32_t opB)
         
         default:
             throw std::runtime_error("Unknown opcode: " + std::to_string(static_cast<uint32_t>(opcode)));
+    }
+
+    void CPU::saveTo(PCB& out) const 
+    {
+        out.regs = regs_;
+        out.ip = ip_;
+        out.sp = sp_;
+        out.zeroFlag = zeroFlag_;
+        out.signFlag = signFlag_;
+    }
+
+    void CPU::loadFrom(const PCB& in) 
+    {
+        regs_ = in.regs;
+        ip_ = in.ip;
+        sp_ = in.sp;
+        zeroFlag_ = in.zeroFlag;
+        signFlag_ = in.signFlag;
     }
 
 }

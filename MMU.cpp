@@ -117,3 +117,31 @@ uint32_t MMU::translate(uint32_t vaddr) const
 
     return paddr;
 }
+
+void MMU::setPageTable(const std::vector<uint32_t>* pt) {
+    activePageTable_ = pt;
+}
+
+bool MMU::isValidVaddr_(uint32_t vaddr) const {
+    // simplest: allow if inside any segment
+    bool inCode = (vaddr >= codeBase_ && vaddr < codeBase_ + codeSize_);
+    bool inData = (vaddr >= dataBase_ && vaddr < dataBase_ + dataSize_);
+    bool inHeap = (vaddr >= heapStart_ && vaddr < heapEnd_);
+    // stack grows down: valid if vaddr in [stackTop-stackMax, stackTop)
+    bool inStack = (vaddr < stackTop_ && vaddr >= (stackTop_ - stackMax_));
+    return inCode || inData || inHeap || inStack;
+}
+
+uint32_t MMU::translate(uint32_t vaddr) const {
+    if (!activePageTable_) throw std::runtime_error("MMU: no active page table set");
+    if (!isValidVaddr_(vaddr)) throw std::runtime_error("MMU: vaddr outside process bounds");
+
+    uint32_t vpage  = vaddr >> 8;
+    uint32_t offset = vaddr & 0xFF;
+
+    if (vpage >= activePageTable_->size()) throw std::runtime_error("MMU: vpage out of range");
+    uint32_t ppage = (*activePageTable_)[vpage];
+    if (ppage == PCB::UNMAPPED) throw std::runtime_error("MMU: unmapped page");
+
+    return ppage * 256 + offset;
+}
