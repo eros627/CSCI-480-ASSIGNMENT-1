@@ -1,159 +1,166 @@
-#include <iostream>
-#include "MMU.H"
-#include "CPU.H"
-#include "PROGRAM.H"
 #include "OS.h"
-#include "process.h"
+#include "Assembler.h"
+#include <algorithm>
+#include <iostream>
+#include <stdexcept>
 
-int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " program.asm\n";
-        return 1;
-    }
-   // std::cerr << "OS: Loading program file: " << argv[1] << "\n";
-    MMU mmu(64 * 1024);
-    CPU cpu(mmu);
-
-    Program prog;
-    prog.loadFromFile(argv[1]);
-
-    //std::cerr << "OS: Program size (bytes): " << prog.sizeBytes() << "\n";
-
-    uint32_t base = 0x1000;
-    uint32_t stackTop = 0x9000;
-
-    prog.loadIntoMemory(mmu, base);
-
-    cpu.SetIP(base);
-    cpu.SetSP(stackTop);
-
-    cpu.Run();
-    return 0;
-
-    
+// Constructor
+OS::OS()
+    : mmu_(64 * 1024), cpu_(mmu_)   // 64 KB physical memory
+{
 }
 
-uint32_t OS::createProcessFromAsm(const std::string& path, uint32_t priority) {
-    Program prog;
-    prog.loadFromFile(path);
+// Create a process from an assembly file
+int OS::createProcessFromAsm(const std::string& asmFile, int pid) {
+    // Assemble the source file into a Program object
+    Program prog = Assembler::assembleFile(asmFile);
 
+    // Create process
     Process p;
-    p.name = path;
-    p.pcb.pid = nextPid_++;
-    p.pcb.priority = priority;
-    p.pcb.timeQuantum = 50;
-    p.pcb.state = ProcState::New;
+    p.pid = pid;
+    p.state = ProcessState::READY;
 
-    // segment layout
-    p.pcb.codeBase = CODE_BASE;
-    p.pcb.codeSize = static_cast<uint32_t>(prog.sizeBytes()); // you may add sizeBytes()
+    // -----------------------------
+    // Define this process memory layout
+    // -----------------------------
+    p.pcb.codeBase  = 0x1000;
+    p.pcb.codeSize  = static_cast<uint32_t>(prog.bytes().size());
 
-    p.pcb.dataBase = DATA_BASE;
-    p.pcb.dataSize = 0; // if not using yet
+    p.pcb.dataBase  = 0x4000;
+    p.pcb.dataSize  = 0x1000;   // 4 KB data segment
 
-    p.pcb.heapStart = HEAP_START;
-    p.pcb.heapEnd   = HEAP_START; // empty heap for now
+    p.pcb.heapStart = 0x5000;
+    p.pcb.heapEnd   = 0x6000;   // 4 KB heap
 
-    p.pcb.stackTop = STACK_TOP;
-    p.pcb.stackMax = STACK_MAX;
+    p.pcb.stackTop  = 0xF000;
+    p.pcb.stackMax  = 0x1000;   // 4 KB stack
 
+    // Initial CPU register state
+    p.pcb.IP = p.pcb.codeBase;
+    p.pcb.SP = p.pcb.stackTop;
+
+    // Load program into this process address space
     loadProcessImage_(p, prog);
 
-    // init CPU state in PCB
-    p.pcb.ip = p.pcb.codeBase;
-    p.pcb.sp = p.pcb.stackTop;
-    p.pcb.regs.fill(0);
+    // Add to process table / ready queue
+    processes_.push_back(p);
+    readyQueue_.push_back(static_cast<int>(processes_.size() - 1));
 
-    p.pcb.state = ProcState::Ready;
-
-    procs_.push_back(std::move(p));
-    enqueueReady_(procs_.back().pcb.pid);
-    return procs_.back().pcb.pid;
+    return pid;
 }
 
-void OS::loadProcessImage_(Process& p, const Program& prog) 
-{
+// Load process image into paged virtual memory
+void OS::loadProcessImage_(Process& p, const Program& prog) {
+    // Determine highest virtual page needed
+    uint32_t codeStart     = p.pcb.codeBase;
+    uint32_t codeEnd       = p.pcb.codeBase + p.pcb.codeSize - 1;
+    uint32_t firstCodePage = codeStart / MMU::PAGE_SIZE;
+    uint32_t lastCodePage  = codeEnd / MMU::PAGE_SIZE;
 
-    p.pcb.pageTable.clear();
+    uint32_t stackLowAddr  = p.pcb.stackTop - p.pcb.stackMax;
+    uint32_t stackHighAddr = p.pcb.stackTop - 1;
+    uint32_t stackLowPage  = stackLowAddr / MMU::PAGE_SIZE;
+    uint32_t stackHighPage = stackHighAddr / MMU::PAGE_SIZE;
 
-    // temporarily point MMU to THIS process page table
+    uint32_t maxVPage = std::max(lastCodePage, stackHighPage);
+
+    // Initialize page table with all pages unmapped
+    p.pcb.pageTable.assign(maxVPage + 1, PCB::UNMAPPED);
+    p.pcb.workingSetPages.clear();
+
+    // Activate this process's memory context for loading
     mmu_.setPageTable(&p.pcb.pageTable);
-    mmu_.setBounds(p.pcb.codeBase, p.pcb.codeSize,
-                   p.pcb.dataBase, p.pcb.dataSize,
-                   p.pcb.heapStart, p.pcb.heapEnd,
-                   p.pcb.stackTop, p.pcb.stackMax);
+    mmu_.setBounds(
+        p.pcb.codeBase,  p.pcb.codeSize,
+        p.pcb.dataBase,  p.pcb.dataSize,
+        p.pcb.heapStart, p.pcb.heapEnd,
+        p.pcb.stackTop,  p.pcb.stackMax
+    );
+
+    // Allocate physical pages for code segment
+    for (uint32_t vp = firstCodePage; vp <= lastCodePage; ++vp) {
+        uint32_t pp = mmu_.allocPhysPage();
+        p.pcb.pageTable[vp] = pp;
+        p.pcb.workingSetPages.push_back(pp);
+    }
+
+    // Allocate at least one stack page
+    for (uint32_t vp = stackLowPage; vp <= stackHighPage; ++vp) {
+        if (p.pcb.pageTable[vp] == PCB::UNMAPPED) {
+            uint32_t pp = mmu_.allocPhysPage();
+            p.pcb.pageTable[vp] = pp;
+            p.pcb.workingSetPages.push_back(pp);
+        }
+    }
+
+    // Copy program bytes into virtual memory
+    const std::vector<uint8_t>& codeBytes = prog.bytes();
+    for (uint32_t i = 0; i < codeBytes.size(); ++i) {
+        mmu_.write8(p.pcb.codeBase + i, codeBytes[i]);
+    }
 }
 
-void OS::run() 
-{
-    while (true) 
-    {
-        tickSleepers_();
+// Switch CPU/MMU to this process
+void OS::contextSwitchTo_(Process& p) {
+    mmu_.setPageTable(&p.pcb.pageTable);
+    mmu_.setBounds(
+        p.pcb.codeBase,  p.pcb.codeSize,
+        p.pcb.dataBase,  p.pcb.dataSize,
+        p.pcb.heapStart, p.pcb.heapEnd,
+        p.pcb.stackTop,  p.pcb.stackMax
+    );
 
-        int pid = pickNextReadyPid_();
-        if (pid < 0) {
-            // no ready processes; if all terminated -> done
-            bool anyAlive = false;
-            for (auto& p : procs_) if (p.pcb.state != ProcState::Terminated) anyAlive = true;
-            if (!anyAlive) break;
-            // else idle tick
+    cpu_.loadFrom(p.pcb);
+    p.state = ProcessState::RUNNING;
+}
+
+// Save CPU state back into PCB
+void OS::contextSwitchOut_(Process& p) {
+    cpu_.saveTo(p.pcb);
+
+    if (p.state == ProcessState::RUNNING) {
+        p.state = ProcessState::READY;
+    }
+}
+
+// Very simple scheduler: round-robin over ready queue
+void OS::run() {
+    while (!readyQueue_.empty()) {
+        int procIndex = readyQueue_.front();
+        readyQueue_.erase(readyQueue_.begin());
+
+        Process& p = processes_[procIndex];
+
+        if (p.state == ProcessState::TERMINATED) {
             continue;
         }
 
-        Process& p = byPid_(pid);
         contextSwitchTo_(p);
 
-        // run for one slice
-        p.pcb.state = ProcState::Running;
-
-        uint32_t quantum = p.pcb.timeQuantum;
-        while (quantum-- > 0) 
-        {
-            // step once
-            // for now, you can check state changes via flags or throw exceptions
-            Trap t = cpu_.step(); // execute one instruction and get trap info 
-            p.pcb.cycles++;
-
-            // if CPU executed Exit, mark terminated and break
-            // if CPU executed Sleep/Input, break and set waiting state
-            if (t.type == TrapType::Sleep) 
-            {
-                p.pcb.sleepCounter = t.value;     // 0 means indefinite (handle separately)
-                p.pcb.state = ProcState::WaitingSleep;
-                sleeping_.push_back(p.pcb.pid);
-                break; // end slice now
-            }
+        try {
+            cpu_.run();   // or cpu_.Run(); depending on your class
+            p.state = ProcessState::TERMINATED;
+        }
+        catch (const std::exception& ex) {
+            std::cerr << "Process " << p.pid << " faulted: " << ex.what() << "\n";
+            p.state = ProcessState::TERMINATED;
         }
 
-        // preempt if still running after quantum:
-        if (p.pcb.state == ProcState::Running) {
-            p.pcb.state = ProcState::Ready;
-            enqueueReady_(p.pcb.pid);
-        }
+        contextSwitchOut_(p);
 
-        // save state back to PCB happens in contextSwitchOut
-        cpu_.saveTo(p.pcb);
-        p.pcb.contextSwitches++;
+        if (p.state == ProcessState::READY) {
+            readyQueue_.push_back(procIndex);
+        }
     }
-
-
-    // report stats
 }
-void OS::tickSleepers_() 
-{
-    for (size_t i = 0; i < sleeping_.size(); ) 
-    {
-        Process& p = byPid_(sleeping_[i]);
-        if (p.pcb.sleepCounter > 0) p.pcb.sleepCounter--;
 
-        if (p.pcb.sleepCounter == 0) 
-        {
-            p.pcb.state = ProcState::Ready;
-            enqueueReady_(p.pcb.pid);
-            sleeping_.erase(sleeping_.begin() + i);
-        } else 
-        {
-            ++i;
-        }
+// Free all physical pages owned by a terminated process
+void OS::cleanupProcess_(Process& p) {
+    for (uint32_t pp : p.pcb.workingSetPages) {
+        mmu_.freePhysPage(pp);
     }
+
+    p.pcb.workingSetPages.clear();
+    p.pcb.pageTable.clear();
+    p.state = ProcessState::TERMINATED;
 }
