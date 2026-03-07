@@ -1,337 +1,323 @@
 #include "CPU.H"
+
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
-CPU:: CPU(MMU & mmu) : mmu(mmu) 
-{
-    regs_.fill(0); // Initialize all registers to 0
+CPU::CPU(MMU& mmu) : mmu(mmu) {
+    regs_.fill(0);
 }
 
-void CPU::SetIP(uint32_t ip) 
-{
-    ip_ = ip; // Set the instruction pointer
+void CPU::SetIP(uint32_t ip) {
+    ip_ = ip;
 }
-void CPU::SetSP(uint32_t sp) 
-{
+
+void CPU::SetSP(uint32_t sp) {
     sp_ = sp;
 }
 
-int64_t CPU::getReg(uint32_t r) const 
-{
+int64_t CPU::getReg(uint32_t r) const {
     checkReg(r);
     return regs_[r];
 }
 
-void CPU :: Run(uint64_t maxsteps) // Execute instructions
-{
+Trap CPU::Run(uint64_t maxsteps) {
     running_ = true;
 
-    for (uint64_t steps = 0; steps < maxsteps && running_; ++steps) 
-    {
-        step();
+    for (uint64_t steps = 0; steps < maxsteps; ++steps) {
+        Trap t = step();
+        if (t != Trap::None) {
+            return t;
+        }
     }
 
-    if (running_) {
-        throw std::runtime_error("CPU halted: maxSteps reached (possible infinite loop)");
-    }
+    return Trap::QuantumExpired;
 }
 
-Trap CPU::step()  // instead of void
-{
-    uint32_t rawOpcode = 0, opA = 0, opB = 0;
+Trap CPU::step() {
+    uint32_t rawOpcode = 0;
+    uint32_t opA = 0;
+    uint32_t opB = 0;
+
     fetch(rawOpcode, opA, opB);
 
     Opcode opcode = static_cast<Opcode>(rawOpcode);
-    execute(opcode, opA, opB);
+    return execute(opcode, opA, opB);
 }
 
-void CPU :: checkReg(uint32_t r) const 
-{
+void CPU::checkReg(uint32_t r) const {
     if (r < 1 || r > 10) {
         throw std::out_of_range("Invalid register index");
     }
 }
 
-void CPU :: fetch(uint32_t& rawOpcode, uint32_t& opA, uint32_t& opB) 
-{
-    rawOpcode = mmu.read32(ip_);// Fetch opcode
-    opA = mmu.read32(ip_ + 4);// Fetch operand A
-    opB = mmu.read32(ip_ + 8);// Fetch operand B
-    
-    ip_ += 12; // Move IP to next instruction
+void CPU::fetch(uint32_t& rawOpcode, uint32_t& opA, uint32_t& opB) {
+    rawOpcode = mmu.read32(ip_);
+    opA = mmu.read32(ip_ + 4);
+    opB = mmu.read32(ip_ + 8);
+
+    ip_ += 12;
 }
 
-void CPU :: execute(Opcode opcode, uint32_t opA, uint32_t opB) 
-{
-    switch (opcode) 
-    {
+Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
+    switch (opcode) {
         case Opcode::Exit:
-            running_ = false; // Stop execution
-            return;
-        
+            running_ = false;
+            return Trap::Exit;
+
         case Opcode::Sleep:
-            // Sleep operation not implemented yet
-            break;
-        case Opcode:: Movi:
             checkReg(opA);
-            regs_[opA] = static_cast<int64_t>(opB); // Move immediate
-            break;
+            return Trap::Sleep;
+
+        case Opcode::Movi:
+            checkReg(opA);
+            regs_[opA] = static_cast<int64_t>(static_cast<int32_t>(opB));
+            return Trap::None;
+
         case Opcode::Movr:
             checkReg(opA);
             checkReg(opB);
-            regs_[opA] = regs_[opB]; // Move register
-            break;
-        case Opcode::Movmr: 
-        {
-            checkReg(opA); // destination rx
-            checkReg(opB); // address register ry
-            uint32_t addr = static_cast<uint32_t>(regs_[opB]);   // address in ry
-            regs_[opA] = static_cast<int32_t>(mmu.read32(addr)); // load 32-bit into rx (sign-extend)
-            break;
-        }
-        case Opcode::Movrm: 
-        {
-            checkReg(opA); // address register rx
-            checkReg(opB); // source register ry
-            uint32_t addr = static_cast<uint32_t>(regs_[opA]);   // address in rx
-            mmu.write32(addr, static_cast<uint32_t>(regs_[opB] & 0xFFFFFFFF));
-            break;
-        }
-        case Opcode :: Movmm: 
-        {
-            checkReg(opA); // destination address register rx
-            checkReg(opB); // source address register ry
+            regs_[opA] = regs_[opB];
+            return Trap::None;
 
-            uint32_t addrDest = static_cast<uint32_t>(regs_[opA]); // destination address in rx
-            uint32_t addrSrc = static_cast<uint32_t>(regs_[opB]);  // source address in ry
+        case Opcode::Movmr: {
+            checkReg(opA);
+            checkReg(opB);
+            uint32_t addr = static_cast<uint32_t>(regs_[opB]);
+            regs_[opA] = static_cast<int32_t>(mmu.read32(addr));
+            return Trap::None;
+        }
+
+        case Opcode::Movrm: {
+            checkReg(opA);
+            checkReg(opB);
+            uint32_t addr = static_cast<uint32_t>(regs_[opA]);
+            mmu.write32(addr, static_cast<uint32_t>(regs_[opB] & 0xFFFFFFFF));
+            return Trap::None;
+        }
+
+        case Opcode::Movmm: {
+            checkReg(opA);
+            checkReg(opB);
+            uint32_t addrDest = static_cast<uint32_t>(regs_[opA]);
+            uint32_t addrSrc  = static_cast<uint32_t>(regs_[opB]);
             uint32_t val = mmu.read32(addrSrc);
             mmu.write32(addrDest, val);
-            break;
+            return Trap::None;
         }
+
         case Opcode::Incr:
             checkReg(opA);
-            regs_[opA] += 1; // Increment register
-            break;
+            regs_[opA] += 1;
+            return Trap::None;
+
         case Opcode::Addi:
             checkReg(opA);
-            regs_[opA] += static_cast<int64_t>(opB); // Add immediate
-            break;
+            regs_[opA] += static_cast<int64_t>(static_cast<int32_t>(opB));
+            return Trap::None;
+
         case Opcode::Addr:
             checkReg(opA);
             checkReg(opB);
-            regs_[opA] += regs_[opB]; // Add register
-            break;
+            regs_[opA] += regs_[opB];
+            return Trap::None;
+
         case Opcode::Printr:
             checkReg(opA);
-            std::cout << regs_[opA] << std::endl; // Print register
-            break;
-        case Opcode::Printm:
-        {
-            checkReg(opA);  // address register rx
-            uint32_t addr = static_cast<uint32_t>(regs_[opA]); // address
+            std::cout << regs_[opA] << '\n';
+            return Trap::None;
+
+        case Opcode::Printm: {
+            checkReg(opA);
+            uint32_t addr = static_cast<uint32_t>(regs_[opA]);
             uint32_t val = mmu.read32(addr);
-            std::cout << static_cast<int32_t>(val) << std::endl; // Print memory value (sign-extended)
-            break;
+            std::cout << static_cast<int32_t>(val) << '\n';
+            return Trap::None;
         }
+
         case Opcode::Printcr:
             checkReg(opA);
-            std::cout << static_cast<char>(regs_[opA] & 0xFF) << std::endl; // Print char from register
-            break;
-        case Opcode::Printcm:
-        {
-            checkReg(opA);  // address register rx
-            uint32_t addr = static_cast<uint32_t>(regs_[opA]); // address
+            std::cout << static_cast<char>(regs_[opA] & 0xFF) << '\n';
+            return Trap::None;
+
+        case Opcode::Printcm: {
+            checkReg(opA);
+            uint32_t addr = static_cast<uint32_t>(regs_[opA]);
             uint8_t val = mmu.read8(addr);
-            std::cout << static_cast<char>(val) << std::endl; // Print char from memory
-            break;
+            std::cout << static_cast<char>(val) << '\n';
+            return Trap::None;
         }
-        //control flow opcode cases below
+
         case Opcode::Jmp:
             checkReg(opA);
             ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + regs_[opA]);
-            break;
+            return Trap::None;
+
         case Opcode::Jmpi:
             ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + static_cast<int32_t>(opA));
-            break;
+            return Trap::None;
+
         case Opcode::Jmpa:
-            ip_ = opA; // Absolute jump
-            break;
-        case Opcode::Cmpi:
-        {
+            ip_ = opA;
+            return Trap::None;
+
+        case Opcode::Cmpi: {
             checkReg(opA);
             int64_t regVal = regs_[opA];
-            int64_t imm = static_cast<int32_t>(opB); // sign-extend
+            int64_t imm = static_cast<int32_t>(opB);
             zeroFlag_ = (regVal == imm);
             signFlag_ = (regVal < imm);
-            break;
+            return Trap::None;
         }
-        case Opcode::Cmpr:
+
+        case Opcode::Cmpr: {
             checkReg(opA);
             checkReg(opB);
-            {
-                int64_t regAVal = regs_[opA];
-                int64_t regBVal = regs_[opB];
-                zeroFlag_ = (regAVal == regBVal);
-                signFlag_ = (regAVal < regBVal);
-            }
-            break;
+            int64_t regAVal = regs_[opA];
+            int64_t regBVal = regs_[opB];
+            zeroFlag_ = (regAVal == regBVal);
+            signFlag_ = (regAVal < regBVal);
+            return Trap::None;
+        }
+
         case Opcode::Jlt:
             checkReg(opA);
-            if (signFlag_) 
-            {
+            if (signFlag_) {
                 ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + regs_[opA]);
             }
-            break;
+            return Trap::None;
 
-        case Opcode::Jlti: 
-        {
+        case Opcode::Jlti:
             if (signFlag_) {
                 ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + static_cast<int32_t>(opA));
             }
-            break;
-        }
+            return Trap::None;
+
         case Opcode::Jlta:
-            if (signFlag_) 
-            {
-                ip_ = opA; // Absolute jump
+            if (signFlag_) {
+                ip_ = opA;
             }
-            break;
+            return Trap::None;
+
         case Opcode::Jgt:
             checkReg(opA);
-            if (!signFlag_ && !zeroFlag_) 
-            {
+            if (!signFlag_ && !zeroFlag_) {
                 ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + regs_[opA]);
             }
-            break;
+            return Trap::None;
+
         case Opcode::Jgti:
-            checkReg(opA);
-            if (!signFlag_ && !zeroFlag_) 
-            {
+            if (!signFlag_ && !zeroFlag_) {
                 ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + static_cast<int32_t>(opA));
             }
-            break;
+            return Trap::None;
+
         case Opcode::Jgta:
-            checkReg(opA);
-            if (!signFlag_ && !zeroFlag_) 
-            {
-                ip_ = opA; // Absolute jump
+            if (!signFlag_ && !zeroFlag_) {
+                ip_ = opA;
             }
-            break;
+            return Trap::None;
+
         case Opcode::Je:
             checkReg(opA);
-            if (zeroFlag_) 
-            {
+            if (zeroFlag_) {
                 ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + regs_[opA]);
             }
-            break;
+            return Trap::None;
+
         case Opcode::Jei:
-            checkReg(opA);
-            if (zeroFlag_) 
-            {
+            if (zeroFlag_) {
                 ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + static_cast<int32_t>(opA));
             }
-            break;
+            return Trap::None;
+
         case Opcode::Jea:
-            checkReg(opA);
-            if (zeroFlag_) 
-            {
-                ip_ = opA; // Absolute jump
+            if (zeroFlag_) {
+                ip_ = opA;
             }
-            break;
+            return Trap::None;
+
         case Opcode::Call:
             checkReg(opA);
             sp_ -= 4;
-            mmu.write32(sp_, ip_); // Push return address
+            mmu.write32(sp_, ip_);
             ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + regs_[opA]);
-            break;
-        case Opcode::Callm:
-        {
+            return Trap::None;
+
+        case Opcode::Callm: {
             checkReg(opA);
             sp_ -= 4;
-            mmu.write32(sp_, ip_); // return address 
+            mmu.write32(sp_, ip_);
 
-            uint32_t addr = static_cast<uint32_t>(regs_[opA]); // address held in rx
-            int32_t offset = static_cast<int32_t>(mmu.read32(addr)); // [rx]
+            uint32_t addr = static_cast<uint32_t>(regs_[opA]);
+            int32_t offset = static_cast<int32_t>(mmu.read32(addr));
             ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + offset);
-            break;
+            return Trap::None;
         }
+
         case Opcode::Ret:
-        {
-            ip_ = mmu.read32(sp_); // Pop return address
+            ip_ = mmu.read32(sp_);
             sp_ += 4;
-            break;
-        }
-        //stack opcode cases below
+            return Trap::None;
+
         case Opcode::Pushi:
             sp_ -= 4;
             mmu.write32(sp_, opA);
-            break;
+            return Trap::None;
+
         case Opcode::Pushr:
             checkReg(opA);
             sp_ -= 4;
             mmu.write32(sp_, static_cast<uint32_t>(regs_[opA] & 0xFFFFFFFF));
-            break;
+            return Trap::None;
+
         case Opcode::Popr:
             checkReg(opA);
             regs_[opA] = static_cast<int32_t>(mmu.read32(sp_));
             sp_ += 4;
-            break;
-        case Opcode::Popm:
-        {
+            return Trap::None;
+
+        case Opcode::Popm: {
             checkReg(opA);
             uint32_t v = mmu.read32(sp_);
             sp_ += 4;
 
-            uint32_t addr = static_cast<uint32_t>(regs_[opA]); // address held in rx
+            uint32_t addr = static_cast<uint32_t>(regs_[opA]);
             mmu.write32(addr, v);
-            break;
+            return Trap::None;
         }
-        //input opcode cases below
+
         case Opcode::Input:
-        {
             checkReg(opA);
-            int64_t inputVal;
-            std::cin >> inputVal;
-            regs_[opA] = static_cast<int64_t>(inputVal);
-            break;
-        }
+            return Trap::Input;
+
         case Opcode::Inputc:
-        {
             checkReg(opA);
-            char ch;
-            std::cin.get(ch);               // reads next character including whitespace
-            if (ch == '\n') std::cin.get(ch); // skip newline if present
-            regs_[opA] = static_cast<uint8_t>(ch);
-            break;
-        }
-        case Opcode::Setpriority:           
-            // Priority setting not implemented
-            break;
+            return Trap::Inputc;
+
+        case Opcode::Setpriority:
         case Opcode::Setpriorityi:
-            // Priority setting not implemented
-            break;  
-        
+            return Trap::None;
+
         default:
-            throw std::runtime_error("Unknown opcode: " + std::to_string(static_cast<uint32_t>(opcode)));
+            throw std::runtime_error(
+                "Unknown opcode: " + std::to_string(static_cast<uint32_t>(opcode))
+            );
     }
-
-    void CPU::saveTo(PCB& out) const 
-    {
-        out.regs = regs_;
-        out.ip = ip_;
-        out.sp = sp_;
-        out.zeroFlag = zeroFlag_;
-        out.signFlag = signFlag_;
-    }
-
-    void CPU::loadFrom(const PCB& in) 
-    {
-        regs_ = in.regs;
-        ip_ = in.ip;
-        sp_ = in.sp;
-        zeroFlag_ = in.zeroFlag;
-        signFlag_ = in.signFlag;
-    }
-
 }
 
+void CPU::saveTo(PCB& out) const {
+    out.regs = regs_;
+    out.ip = ip_;
+    out.sp = sp_;
+    out.zeroFlag = zeroFlag_;
+    out.signFlag = signFlag_;
+}
+
+void CPU::loadFrom(const PCB& in) {
+    regs_ = in.regs;
+    ip_ = in.ip;
+    sp_ = in.sp;
+    zeroFlag_ = in.zeroFlag;
+    signFlag_ = in.signFlag;
+}

@@ -17,7 +17,6 @@ uint32_t MMU::allocPhysPage() {
         if (!physUsed[p]) {
             physUsed[p] = true;
 
-            // zero out page
             uint32_t base = p * PAGE_SIZE;
             for (uint32_t i = 0; i < PAGE_SIZE; ++i) {
                 physMem.write8(base + i, 0);
@@ -26,6 +25,7 @@ uint32_t MMU::allocPhysPage() {
             return p;
         }
     }
+
     throw std::runtime_error("Out of physical memory");
 }
 
@@ -33,6 +33,7 @@ void MMU::freePhysPage(uint32_t ppage) {
     if (ppage >= numPhysPages()) {
         throw std::runtime_error("Physical page out of range");
     }
+
     physUsed[ppage] = false;
 }
 
@@ -55,10 +56,10 @@ void MMU::setBounds(uint32_t codeBase,  uint32_t codeSize,
 }
 
 bool MMU::isValidVaddr_(uint32_t vaddr) const {
-    bool inCode  = (vaddr >= codeBase_ && vaddr < codeBase_ + codeSize_);
-    bool inData  = (vaddr >= dataBase_ && vaddr < dataBase_ + dataSize_);
-    bool inHeap  = (vaddr >= heapStart_ && vaddr < heapEnd_);
-    bool inStack = (vaddr < stackTop_ && vaddr >= (stackTop_ - stackMax_));
+    const bool inCode  = (vaddr >= codeBase_ && vaddr < codeBase_ + codeSize_);
+    const bool inData  = (vaddr >= dataBase_ && vaddr < dataBase_ + dataSize_);
+    const bool inHeap  = (vaddr >= heapStart_ && vaddr < heapEnd_);
+    const bool inStack = (vaddr < stackTop_ && vaddr >= (stackTop_ - stackMax_));
 
     return inCode || inData || inHeap || inStack;
 }
@@ -72,14 +73,14 @@ uint32_t MMU::translate(uint32_t vaddr) const {
         throw std::runtime_error("MMU: virtual address outside process bounds");
     }
 
-    uint32_t vpage  = vaddr >> OFFSET_BITS;
-    uint32_t offset = vaddr & OFFSET_MASK;
+    const uint32_t vpage  = vaddr >> OFFSET_BITS;
+    const uint32_t offset = vaddr & OFFSET_MASK;
 
     if (vpage >= activePageTable_->size()) {
         throw std::runtime_error("MMU: virtual page out of range");
     }
 
-    uint32_t ppage = (*activePageTable_)[vpage];
+    const uint32_t ppage = (*activePageTable_)[vpage];
     if (ppage == UNMAPPED) {
         throw std::runtime_error("MMU: unmapped page");
     }
@@ -106,7 +107,7 @@ uint32_t MMU::read32(uint32_t vaddr) const {
 
 void MMU::write32(uint32_t vaddr, uint32_t val) {
     write8(vaddr,     static_cast<uint8_t>(val & 0xFF));
-    write8(vaddr + 1, static_cast<uint8_t>((val >> 8) & 0xFF));
+    write8(vaddr + 1, static_cast<uint8_t>((val >> 8)  & 0xFF));
     write8(vaddr + 2, static_cast<uint8_t>((val >> 16) & 0xFF));
     write8(vaddr + 3, static_cast<uint8_t>((val >> 24) & 0xFF));
 }

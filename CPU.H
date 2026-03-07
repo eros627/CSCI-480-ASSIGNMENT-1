@@ -1,8 +1,8 @@
 #ifndef CPU_H
 #define CPU_H
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 
 #include "MMU.H"
 #include "ENUMOPCODE.H"
@@ -10,14 +10,13 @@
 #include "trap.h"
 
 class CPU {
-
 public:
-
-    CPU(MMU & mmu);
+    explicit CPU(MMU& mmu);
 
     void SetIP(uint32_t ip);
     void SetSP(uint32_t sp);
 
+    Trap Run(uint64_t maxsteps);
     Trap step();
 
     void saveTo(PCB& out) const;
@@ -26,8 +25,7 @@ public:
     int64_t getReg(uint32_t r) const;
 
 private:
-
-    MMU & mmu;
+    MMU& mmu;
 
     std::array<int64_t, 16> regs_{};
 
@@ -36,15 +34,11 @@ private:
 
     bool zeroFlag_ = false;
     bool signFlag_ = false;
-
-    bool running_ = true;
+    bool running_ = false;
 
     void checkReg(uint32_t r) const;
-
     void fetch(uint32_t& rawOpcode, uint32_t& opA, uint32_t& opB);
-
     Trap execute(Opcode opcode, uint32_t opA, uint32_t opB);
-
 };
 
 #endif

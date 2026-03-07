@@ -22,11 +22,9 @@ public:
     uint32_t read32(uint32_t vaddr) const;
     void     write32(uint32_t vaddr, uint32_t val);
 
-    // Physical page allocation helpers
     uint32_t allocPhysPage();
     void     freePhysPage(uint32_t ppage);
 
-    // Per-process MMU context
     void setPageTable(const std::vector<uint32_t>* pt);
     void setBounds(uint32_t codeBase,  uint32_t codeSize,
                    uint32_t dataBase,  uint32_t dataSize,
@@ -39,13 +37,17 @@ private:
 
     const std::vector<uint32_t>* activePageTable_ = nullptr;
 
-    uint32_t codeBase_  = 0, codeSize_  = 0;
-    uint32_t dataBase_  = 0, dataSize_  = 0;
-    uint32_t heapStart_ = 0, heapEnd_   = 0;
-    uint32_t stackTop_  = 0, stackMax_  = 0;
+    uint32_t codeBase_  = 0;
+    uint32_t codeSize_  = 0;
+    uint32_t dataBase_  = 0;
+    uint32_t dataSize_  = 0;
+    uint32_t heapStart_ = 0;
+    uint32_t heapEnd_   = 0;
+    uint32_t stackTop_  = 0;
+    uint32_t stackMax_  = 0;
 
     uint32_t numPhysPages() const;
-    bool     isValidVaddr_(uint32_t vaddr) const;
+    bool isValidVaddr_(uint32_t vaddr) const;
     uint32_t translate(uint32_t vaddr) const;
 };
 

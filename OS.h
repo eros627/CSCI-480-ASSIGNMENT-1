@@ -1,48 +1,46 @@
 #ifndef OS_H
 #define OS_H
 
-#include <vector>
-#include <deque>
+#include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <string>
+#include <vector>
+
 #include "MMU.H"
 #include "CPU.H"
 #include "process.h"
 #include "PROGRAM.H"
+#include "procstate.h"
 
 class OS {
 public:
-    OS(size_t physMemBytes);
+    explicit OS(size_t physMemBytes = 64 * 1024);
 
-    uint32_t createProcessFromAsm(const std::string& path, uint32_t priority);
+    uint32_t createProcessFromAsm(const std::string& asmFile, uint32_t priority);
     void run();
+    ProcState getProcessState(uint32_t pid) const;
+    void reportStats() const;
 
 private:
-
-    static constexpr uint32_t CODE_BASE  = 0x1000;
-    static constexpr uint32_t DATA_BASE  = 0x4000;
-    static constexpr uint32_t HEAP_START = 0x6000;
-    static constexpr uint32_t STACK_TOP  = 0x9000;
-    static constexpr uint32_t STACK_MAX  = 0x1000;
-
     MMU mmu_;
     CPU cpu_;
     uint32_t nextPid_ = 1;
 
-    std::vector<Process> procs_;
+    std::vector<Process> processes_;
 
-    // ready queues by priority 1..32 (index 1..32)
-    std::vector<std::deque<uint32_t>> ready_;
-
-    // waiting sleepers store pid
-    std::deque<uint32_t> sleeping_;
+    // index 1..32 used
+    std::vector<std::deque<size_t>> ready_;
+    std::deque<size_t> sleeping_;
 
     void loadProcessImage_(Process& p, const Program& prog);
-    void enqueueReady_(uint32_t pid);
-    int pickNextReadyPid_();
     void contextSwitchTo_(Process& p);
+    void contextSwitchOut_(Process& p);
+    void cleanupProcess_(Process& p);
+
+    void enqueueReady_(size_t procIndex);
+    int pickNextReady_();
     void tickSleepers_();
-    
-    Process& byPid_(uint32_t pid);
 };
 
-#endif // OS_H
+#endif

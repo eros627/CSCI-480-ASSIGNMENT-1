@@ -10,23 +10,25 @@
 
 class Program {
 public:
+    Program() = default;
+    explicit Program(const std::vector<uint8_t>& bytes);
+
     // Load and assemble a program file into instruction bytes
     void loadFromFile(const std::string& path);
 
-    // Get the encoded bytes (multiple of 12)
-    const std::vector<uint8_t>& bytes() const { return bytes_; }
+    // Get the encoded bytes
+    const std::vector<uint8_t>& bytes() const;
 
     // Convenience: write program bytes into memory at base address
     void loadIntoMemory(MMU& mmu, uint32_t baseAddr) const;
 
     // Helpful for CPU setup
-    uint32_t sizeBytes() const { return static_cast<uint32_t>(bytes_.size()); }
+    uint32_t sizeBytes() const;
 
 private:
     std::vector<uint8_t> bytes_;
 
-private:
-    // Assemble one non-empty line into 12 bytes
+    // Assemble one non-empty line into instruction bytes
     void assembleLine(const std::string& line);
 
     // Encoding helper: append a 32-bit word in little-endian
