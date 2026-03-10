@@ -1,3 +1,5 @@
+// Implementing paged virtual memory using active page table and process boounds.
+
 #include "MMU.H"
 
 MMU::MMU(size_t physMemSize) : physMem(physMemSize) {
