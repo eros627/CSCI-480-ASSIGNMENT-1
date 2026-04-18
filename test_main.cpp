@@ -337,6 +337,71 @@ void test_events() {
     check(os.getProcessState(2) == ProcState::Terminated, "signaler should terminate");
 }
 
+// ─── Module 5: Heap Allocation Tests ─────────────────────────────────────────
+
+void test_heap_alloc_basic() {
+    write_file("heap_alloc_basic.asm",
+        "movi r1, #100\n"     // request 100 bytes (rounds up to 1 page)
+        "alloc r1, r2\n"      // r2 = heap address
+        "cmpi r2, #0\n"
+        "jei #24\n"           // jump to failure if r2==0
+        "movi r3, #42\n"
+        "movrm r2, r3\n"      // mem[r2] = 42
+        "movmr r4, r2\n"      // r4 = mem[r2]
+        "printr r4\n"         // should print 42
+        "freememory r2\n"
+        "exit\n"
+        "movi r5, #0\n"
+        "printr r5\n"
+        "exit\n"
+    );
+    OS os(64 * 1024);
+    uint32_t pid = os.createProcessFromAsm("heap_alloc_basic.asm", 1);
+    os.run();
+    check(os.getProcessState(pid) == ProcState::Terminated,
+          "heap_alloc_basic: process should terminate cleanly");
+}
+
+void test_heap_alloc_fail() {
+    write_file("heap_alloc_fail.asm",
+        "movi r1, #8192\n"   // 8 KB > 4 KB heap — must fail
+        "alloc r1, r2\n"
+        "printr r2\n"        // should print 0
+        "exit\n"
+    );
+    OS os(64 * 1024);
+    uint32_t pid = os.createProcessFromAsm("heap_alloc_fail.asm", 1);
+    os.run();
+    check(os.getProcessState(pid) == ProcState::Terminated,
+          "heap_alloc_fail: process should terminate cleanly");
+}
+
+void test_heap_realloc() {
+    write_file("heap_realloc.asm",
+        "movi r1, #256\n"     // exactly 1 page
+        "alloc r1, r2\n"
+        "movi r3, #99\n"
+        "movrm r2, r3\n"
+        "movmr r4, r2\n"
+        "printr r4\n"         // should print 99
+        "freememory r2\n"
+        "alloc r1, r5\n"      // re-alloc — freed page should be reused
+        "cmpi r5, #0\n"
+        "jei #12\n"
+        "printr r5\n"         // print non-zero address
+        "exit\n"
+        "movi r6, #0\n"
+        "printr r6\n"
+        "exit\n"
+    );
+    OS os(64 * 1024);
+    uint32_t pid = os.createProcessFromAsm("heap_realloc.asm", 1);
+    os.run();
+    check(os.getProcessState(pid) == ProcState::Terminated,
+          "heap_realloc: process should terminate cleanly");
+}
+
+
 int main() {
     run_test("program_load", test_program_load);
     run_test("mmu_basic", test_mmu_basic);
@@ -353,6 +418,9 @@ int main() {
     run_test("shared_memory",test_shared_memory);
     run_test("locks",test_locks);
     run_test("events",test_events);
+    run_test("heap_alloc_basic",  test_heap_alloc_basic);
+    run_test("heap_alloc_fail",   test_heap_alloc_fail);
+    run_test("heap_realloc",      test_heap_realloc);
 
     std::cout << "\nPassed: " << passed << '\n';
     std::cout << "Failed: " << failed << '\n';

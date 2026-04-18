@@ -89,6 +89,7 @@ void Program::assembleLine(const std::string& line) {
         case Opcode::Callm:
         case Opcode::Sleep:
         case Opcode::Input:
+        case Opcode::FreeMemory:   // FreeMemory rx
         case Opcode::Inputc:
         case Opcode::AcquireLock:
         case Opcode::ReleaseLock:
@@ -140,6 +141,7 @@ void Program::assembleLine(const std::string& line) {
         case Opcode::Movmm:
         case Opcode::Addr:
         case Opcode::Cmpr:
+        case Opcode::Alloc:        // Alloc rx, ry
         case Opcode::MapSharedMem:
             needTok(1, "register A");
             needTok(2, "register B");
@@ -324,6 +326,10 @@ Opcode Program::parseMnemonic(const std::string& mnem) {
         {"signaleventi", Opcode::SignalEventI},
         {"waitevent",    Opcode::WaitEvent},
         {"waiteventi",   Opcode::WaitEventI},
+
+        // Module 5 — heap allocation
+        {"alloc",      Opcode::Alloc},
+        {"freememory", Opcode::FreeMemory},
     };
  
     auto it = map.find(mnem);

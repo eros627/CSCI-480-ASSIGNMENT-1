@@ -9,11 +9,13 @@ enum class Trap {
     Sleep,
     Input,
     Inputc,
-    MapSharedMem,   
-    AcquireLock,    
-    ReleaseLock,    
-    SignalEvent,    
-    WaitEvent  
+    MapSharedMem,
+    AcquireLock,
+    ReleaseLock,
+    SignalEvent,
+    WaitEvent,
+    Alloc,       // Module 5: process issued Alloc rx, ry
+    FreeMemory,  // Module 5: process issued FreeMemory rx
 };
 
 #endif
