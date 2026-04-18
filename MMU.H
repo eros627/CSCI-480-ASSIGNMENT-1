@@ -30,6 +30,13 @@ public:
                    uint32_t dataBase,  uint32_t dataSize,
                    uint32_t heapStart, uint32_t heapEnd,
                    uint32_t stackTop,  uint32_t stackMax);
+    
+    // Map physical page pp at virtual page vpage in the given page table
+    // Returns the virtual base address of that page
+    uint32_t mapPageInto(std::vector<uint32_t>& pageTable, uint32_t vpage, uint32_t pp);
+
+    // Extend the isValidVaddr check to allow a shared memory range
+    void addSharedRegion(uint32_t base, uint32_t size);
 
 private:
     PhysMem physMem;

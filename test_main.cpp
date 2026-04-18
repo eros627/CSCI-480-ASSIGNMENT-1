@@ -251,6 +251,92 @@ void test_stats_reporting() {
           "stats test process should terminate");
 }
 
+void test_shared_memory() {
+    write_file("proc_writer.asm",
+        "movi r1, #0\n"
+        "mapsharedmem r1, r2\n"
+        "movi r3, #42\n"
+        "movrm r2, r3\n"
+        "exit\n"
+    );
+
+    write_file("proc_reader.asm",
+        "movi r1, #5\n"
+        "sleep r1\n"
+        "movi r1, #0\n"
+        "mapsharedmem r1, r2\n"
+        "movmr r3, r2\n"
+        "printr r3\n"
+        "exit\n"
+    );
+
+    OS os(64 * 1024);
+    os.createProcessFromAsm("proc_writer.asm", 1);
+    os.createProcessFromAsm("proc_reader.asm", 1);
+    os.run();
+
+    check(os.getProcessState(1) == ProcState::Terminated, "writer should terminate");
+    check(os.getProcessState(2) == ProcState::Terminated, "reader should terminate");
+}
+
+void test_locks() {
+    write_file("lock_test_a.asm",
+        "acquirelocki 0\n"
+        "movi r1, #0\n"
+        "mapsharedmem r1, r2\n"
+        "movmr r3, r2\n"
+        "addi r3, #1\n"
+        "movrm r2, r3\n"
+        "printr r3\n"
+        "releaselocki 0\n"
+        "exit\n"
+    );
+
+    write_file("lock_test_b.asm",
+        "acquirelocki 0\n"
+        "movi r1, #0\n"
+        "mapsharedmem r1, r2\n"
+        "movmr r3, r2\n"
+        "addi r3, #1\n"
+        "movrm r2, r3\n"
+        "printr r3\n"
+        "releaselocki 0\n"
+        "exit\n"
+    );
+
+    OS os(64 * 1024);
+    os.createProcessFromAsm("lock_test_a.asm", 1);
+    os.createProcessFromAsm("lock_test_b.asm", 1);
+    os.run();
+
+    check(os.getProcessState(1) == ProcState::Terminated, "lock_a should terminate");
+    check(os.getProcessState(2) == ProcState::Terminated, "lock_b should terminate");
+}
+
+void test_events() {
+    write_file("event_waiter.asm",
+        "waiteventI 0\n"
+        "movi r1, #99\n"
+        "printr r1\n"
+        "exit\n"
+    );
+
+    write_file("event_signaler.asm",
+        "movi r1, #5\n"
+        "sleep r1\n"
+        "signaleventI 0\n"
+        "exit\n"
+    );
+
+    OS os(64 * 1024);
+    os.createProcessFromAsm("event_waiter.asm", 1);
+    os.createProcessFromAsm("event_signaler.asm", 1);
+    os.run();
+
+    check(os.getProcessState(1) == ProcState::Terminated, "waiter should terminate");
+    check(os.getProcessState(2) == ProcState::Terminated, "signaler should terminate");
+}
+
 int main() {
     run_test("program_load", test_program_load);
     run_test("mmu_basic", test_mmu_basic);
@@ -264,6 +350,9 @@ int main() {
     run_test("sleep_switching", test_sleep_switching);
     run_test("priority_scheduling", test_priority_scheduling);
     run_test("stats_reporting", test_stats_reporting);
+    run_test("shared_memory",test_shared_memory);
+    run_test("locks",test_locks);
+    run_test("events",test_events);
 
     std::cout << "\nPassed: " << passed << '\n';
     std::cout << "Failed: " << failed << '\n';

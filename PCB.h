@@ -16,6 +16,9 @@ struct PCB {
     uint64_t cycles = 0;
     uint64_t contextSwitches = 0;
     uint32_t sleepCounter = 0;
+    
+    int waitingLockId  = -1;   // which lock this process is blocked on (-1 = none)
+    int waitingEventId = -1;   // which event this process is blocked on (-1 = none)
 
     // CPU snapshot
     std::array<int64_t, 16> regs{};
@@ -40,5 +43,7 @@ struct PCB {
     // Paging / isolation: vpage -> ppage map (UNMAPPED if none)
     static constexpr uint32_t UNMAPPED = std::numeric_limits<uint32_t>::max();
     std::vector<uint32_t> pageTable;        // index by vpage
-    std::vector<uint32_t> workingSetPages;  // list of physical pages owned by process
+    std::vector<uint32_t> workingSetPages;
+    
+    // list of physical pages owned by process
 };

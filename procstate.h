@@ -6,5 +6,7 @@ enum class ProcState {
     Running,
     WaitingSleep,
     WaitingIO,
-    Terminated
+    WaitingLock,
+    WaitingEvent,
+    Terminated 
 };

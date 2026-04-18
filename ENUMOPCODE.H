@@ -56,7 +56,22 @@ enum class Opcode : uint32_t {
     Input = 36,
     Inputc = 37,
     Setpriority = 38,
-    Setpriorityi = 39
+    Setpriorityi = 39,
+
+    // Shared Memory
+    MapSharedMem = 40,
+
+    // Locks
+    AcquireLock  = 41,
+    AcquireLockI = 42,
+    ReleaseLock  = 43,
+    ReleaseLockI = 44,
+
+    // Events
+    SignalEvent  = 45,
+    SignalEventI = 46,
+    WaitEvent    = 47,
+    WaitEventI   = 48
 
 };
 

@@ -1,5 +1,6 @@
 #include "CPU.H"
-
+#include "trap.h"
+#include "ENUMOPCODE.H"
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -303,6 +304,46 @@ Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
             throw std::runtime_error(
                 "Unknown opcode: " + std::to_string(static_cast<uint32_t>(opcode))
             );
+        case Opcode::MapSharedMem:
+            checkReg(opA);
+            checkReg(opB);
+            // opA = rx (region id), opB = ry (return address register)
+            // Save opB into a scratch register so OS knows where to write result
+            regs_[15] = opB;  // use r15 as a scratch to pass ry index to OS
+            return Trap::MapSharedMem;
+
+        case Opcode::AcquireLock:
+            checkReg(opA);
+            // regs_[opA] holds lock number — OS will read it from saved PCB
+            return Trap::AcquireLock;
+
+        case Opcode::AcquireLockI:
+            regs_[1] = opA;  // store immediate lock# into r1 so OS can read it uniformly
+            return Trap::AcquireLock;
+
+        case Opcode::ReleaseLock:
+            checkReg(opA);
+            return Trap::ReleaseLock;
+
+        case Opcode::ReleaseLockI:
+            regs_[1] = opA;
+            return Trap::ReleaseLock;
+
+        case Opcode::SignalEvent:
+            checkReg(opA);
+            return Trap::SignalEvent;
+
+        case Opcode::SignalEventI:
+            regs_[1] = opA;
+            return Trap::SignalEvent;
+
+        case Opcode::WaitEvent:
+            checkReg(opA);
+            return Trap::WaitEvent;
+
+        case Opcode::WaitEventI:
+            regs_[1] = opA;
+            return Trap::WaitEvent;
     }
 }
 

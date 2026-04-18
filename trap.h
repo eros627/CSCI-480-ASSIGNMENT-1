@@ -7,7 +7,12 @@ enum class Trap {
     QuantumExpired,
     Sleep,
     Input,
-    Inputc
+    Inputc,
+    MapSharedMem,   
+    AcquireLock,    
+    ReleaseLock,    
+    SignalEvent,    
+    WaitEvent  
 };
 
 #endif

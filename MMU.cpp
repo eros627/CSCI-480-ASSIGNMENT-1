@@ -111,3 +111,12 @@ void MMU::write32(uint32_t vaddr, uint32_t val) {
     write8(vaddr + 2, static_cast<uint8_t>((val >> 16) & 0xFF));
     write8(vaddr + 3, static_cast<uint8_t>((val >> 24) & 0xFF));
 }
+
+uint32_t MMU::mapPageInto(std::vector<uint32_t>& pageTable, uint32_t vpage, uint32_t pp) {
+    if (vpage >= pageTable.size()) {
+        pageTable.resize(vpage + 1, UNMAPPED);
+    }
+    pageTable[vpage] = pp;
+    return vpage * PAGE_SIZE;
+}
+

@@ -4,8 +4,12 @@
 #include <iostream>
 #include <stdexcept>
 
-OS::OS(size_t physMemBytes)
-    : mmu_(physMemBytes), cpu_(mmu_), ready_(33) {
+OS::OS(size_t physMemBytes) : mmu_(physMemBytes), cpu_(mmu_), ready_(33) 
+{
+    for (uint32_t i = 0; i < NUM_SHARED_REGIONS; ++i) 
+    {
+        sharedPhysPages_.push_back(mmu_.allocPhysPage());
+    }
 }
 
 uint32_t OS::createProcessFromAsm(const std::string& asmFile, uint32_t priority) {
@@ -168,6 +172,110 @@ void OS::run() {
                 case Trap::None:
                     enqueueReady_(procIndex);
                     break;
+                
+                case Trap::MapSharedMem: {
+                    // r[opA] = region id, r[15] = which register to write result into
+                    int regionId = static_cast<int>(p.pcb.regs[1]); // or whichever reg holds it
+                    int retReg   = static_cast<int>(p.pcb.regs[15]);
+
+                    if (regionId >= 0 && regionId < (int)sharedPhysPages_.size()) {
+                        uint32_t vpage = SHARED_MEM_VBASE / MMU::PAGE_SIZE + regionId;
+                        uint32_t pp    = sharedPhysPages_[regionId];
+                        uint32_t vaddr = mmu_.mapPageInto(p.pcb.pageTable, vpage, pp);
+
+                        // Also update MMU bounds to allow this shared range
+                        p.pcb.regs[retReg] = vaddr;
+                    }
+                    enqueueReady_(procIndex);
+                    break;
+                }
+
+                case Trap::AcquireLock: {
+                    int lockId = static_cast<int>(p.pcb.regs[1]);  // from AcquireLock rx or AcquireLockI
+                    // but for AcquireLock rx, the lock# is in regs_[opA], not necessarily r1
+                    // You may want to standardize: always put the value in the register specified
+
+                    if (lockId < 0 || lockId >= NUM_LOCKS) {
+                        // Invalid — no-op
+                        enqueueReady_(procIndex);
+                    } else if (!locks_[lockId].held) {
+                        locks_[lockId].held = true;
+                        locks_[lockId].ownerPid = p.pcb.pid;
+                        enqueueReady_(procIndex);
+                    } else {
+                        // Block the process
+                        p.pcb.state = ProcState::WaitingLock;
+                        p.pcb.waitingLockId = lockId;
+                        locks_[lockId].waitQueue.push_back(procIndex);
+                        // Do NOT re-enqueue — process is blocked
+                    }
+                    break;
+                }
+
+                case Trap::ReleaseLock: 
+                {
+                    int lockId = static_cast<int>(p.pcb.regs[1]);
+                    if (lockId >= 0 && lockId < NUM_LOCKS
+                        && locks_[lockId].held
+                        && locks_[lockId].ownerPid == p.pcb.pid) 
+                        {
+
+                        if (!locks_[lockId].waitQueue.empty()) 
+                        {
+                            // Hand lock to next waiter
+                            size_t nextIdx = locks_[lockId].waitQueue.front();
+                            locks_[lockId].waitQueue.pop_front();
+                            locks_[lockId].ownerPid = processes_[nextIdx].pcb.pid;
+                            enqueueReady_(nextIdx);
+                        } 
+                        else 
+                        {
+                            locks_[lockId].held = false;
+                            locks_[lockId].ownerPid = 0;
+                        }
+                    }
+                    enqueueReady_(procIndex);
+                    break;
+                }
+
+                case Trap::WaitEvent: 
+                {
+                    int eventId = static_cast<int>(p.pcb.regs[1]);
+                    if (eventId < 0 || eventId >= NUM_EVENTS) 
+                    {
+                        enqueueReady_(procIndex);  // invalid = no-op
+                    } else if (events_[eventId].signaled) 
+                    {
+                        events_[eventId].signaled = false;  // consume signal
+                        enqueueReady_(procIndex);
+                    } else {
+                        p.pcb.state = ProcState::WaitingEvent;
+                        p.pcb.waitingEventId = eventId;
+                        events_[eventId].waitQueue.push_back(procIndex);
+                    }
+                    break;
+                }
+
+                case Trap::SignalEvent: 
+                {
+                    int eventId = static_cast<int>(p.pcb.regs[1]);
+                    if (eventId >= 0 && eventId < NUM_EVENTS) {
+                        if (!events_[eventId].waitQueue.empty()) 
+                        {
+                            // Wake all waiting processes
+                            while (!events_[eventId].waitQueue.empty()) 
+                            {
+                                size_t waitIdx = events_[eventId].waitQueue.front();
+                                events_[eventId].waitQueue.pop_front();
+                                enqueueReady_(waitIdx);
+                            }
+                        } else {
+                            events_[eventId].signaled = true;  // no one waiting, mark signaled
+                        }
+                    }
+                    enqueueReady_(procIndex);
+                    break;
+                }
             }
         }
         catch (const std::exception& ex) {
@@ -187,7 +295,22 @@ void OS::cleanupProcess_(Process& p) {
     p.pcb.workingSetPages.clear();
     p.pcb.pageTable.clear();
     p.pcb.state = ProcState::Terminated;
-}
+
+    // Release any locks this process held
+    for (int i = 0; i < NUM_LOCKS; ++i) {
+        if (locks_[i].held && locks_[i].ownerPid == p.pcb.pid) {
+            if (!locks_[i].waitQueue.empty()) {
+                size_t nextIdx = locks_[i].waitQueue.front();
+                locks_[i].waitQueue.pop_front();
+                locks_[i].ownerPid = processes_[nextIdx].pcb.pid;
+                enqueueReady_(nextIdx);
+            } else {
+                locks_[i].held = false;
+                locks_[i].ownerPid = 0;
+            }
+        }
+    }
+    }
 
 ProcState OS::getProcessState(uint32_t pid) const {
     for (const auto& p : processes_) {
