@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 #include "procstate.h"
+#include "pageentry.h"   //PageEntry replaces raw uint32_t page table entries
 
 struct PCB {
     // Identity
@@ -30,10 +31,8 @@ struct PCB {
     bool signFlag     = false;
 
     // Module 5 trap operand registers
-    // Saved by CPU::saveTo so the OS knows which registers the trapping
-    // instruction used without hard-coding assumptions.
-    uint32_t trapRegA = 0;  // Alloc: size register;    FreeMemory: address register
-    uint32_t trapRegB = 0;  // Alloc: result register;  (unused for FreeMemory)
+    uint32_t trapRegA = 0;
+    uint32_t trapRegB = 0;
 
     // Virtual memory layout
     uint32_t codeBase = 0, codeSize = 0;
@@ -41,12 +40,12 @@ struct PCB {
     uint32_t heapStart = 0, heapEnd = 0;
     uint32_t stackTop  = 0, stackMax = 0;
 
-    // Paging / isolation
-    static constexpr uint32_t UNMAPPED = std::numeric_limits<uint32_t>::max();
-    std::vector<uint32_t> pageTable;
-    std::vector<uint32_t> workingSetPages;
+    // page table now uses PageEntry (isValid + isDirty flags)
+    // workingSetPages tracks virtual page numbers (not physical) so eviction
+    // does not invalidate the list.
+    std::vector<PageEntry> pageTable;
+    std::vector<uint32_t>  workingSetPages;  // stores virtual page numbers
 
     // Heap allocation table (Module 5)
-    // Maps base virtual address of each live heap allocation -> number of pages
     std::unordered_map<uint32_t, uint32_t> heapAllocations;
 };

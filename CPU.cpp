@@ -1,4 +1,5 @@
 #include "CPU.H"
+#include "pageentry.h"
 #include "trap.h"
 #include "ENUMOPCODE.H"
 #include <iostream>
@@ -21,10 +22,20 @@ Trap CPU::Run(uint64_t maxsteps) {
     return Trap::QuantumExpired;
 }
 
+// Module 6: save ip_ before fetch so a PageFaultException during fetch OR
+// execute always leaves ip_ pointing at the faulting instruction.
+// The OS catches PageFaultException, brings the page in, and re-queues the
+// process; next time it runs it retries from the same ip_.
 Trap CPU::step() {
-    uint32_t rawOpcode = 0, opA = 0, opB = 0;
-    fetch(rawOpcode, opA, opB);
-    return execute(static_cast<Opcode>(rawOpcode), opA, opB);
+    uint32_t savedIP = ip_;
+    try {
+        uint32_t rawOpcode = 0, opA = 0, opB = 0;
+        fetch(rawOpcode, opA, opB);
+        return execute(static_cast<Opcode>(rawOpcode), opA, opB);
+    } catch (PageFaultException&) {
+        ip_ = savedIP;   // restore so the OS retries this instruction
+        throw;
+    }
 }
 
 void CPU::checkReg(uint32_t r) const {
@@ -43,19 +54,17 @@ Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
         case Opcode::Exit:   running_ = false; return Trap::Exit;
         case Opcode::Sleep:  checkReg(opA);    return Trap::Sleep;
 
-        // ── Module 5 ─────────────────────────────────────────────────────────
         case Opcode::Alloc:
             checkReg(opA); checkReg(opB);
-            trapRegA_ = opA;  // rx: byte count
-            trapRegB_ = opB;  // ry: result address
+            trapRegA_ = opA;
+            trapRegB_ = opB;
             return Trap::Alloc;
 
         case Opcode::FreeMemory:
             checkReg(opA);
-            trapRegA_ = opA;  // rx: address to free
+            trapRegA_ = opA;
             return Trap::FreeMemory;
 
-        // ── Assignment 4 ──────────────────────────────────────────────────────
         case Opcode::MapSharedMem:
             checkReg(opA); checkReg(opB);
             regs_[15] = opB;
@@ -93,7 +102,6 @@ Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
             regs_[1] = opA;
             return Trap::WaitEvent;
 
-        // ── Data movement ────────────────────────────────────────────────────
         case Opcode::Movi:
             checkReg(opA);
             regs_[opA] = static_cast<int64_t>(static_cast<int32_t>(opB));
@@ -124,7 +132,6 @@ Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
             return Trap::None;
         }
 
-        // ── Arithmetic ───────────────────────────────────────────────────────
         case Opcode::Incr:
             checkReg(opA); regs_[opA] += 1; return Trap::None;
 
@@ -138,7 +145,6 @@ Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
             regs_[opA] += regs_[opB];
             return Trap::None;
 
-        // ── Output ───────────────────────────────────────────────────────────
         case Opcode::Printr:
             checkReg(opA);
             std::cout << regs_[opA] << '\n';
@@ -161,7 +167,6 @@ Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
             return Trap::None;
         }
 
-        // ── Control flow ─────────────────────────────────────────────────────
         case Opcode::Jmp:
             checkReg(opA);
             ip_ = static_cast<uint32_t>(static_cast<int64_t>(ip_) + regs_[opA]);
@@ -234,7 +239,6 @@ Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
         case Opcode::Ret:
             ip_ = mmu.read32(sp_); sp_ += 4; return Trap::None;
 
-        // ── Stack ────────────────────────────────────────────────────────────
         case Opcode::Pushi:
             sp_ -= 4; mmu.write32(sp_, opA); return Trap::None;
         case Opcode::Pushr:
@@ -252,7 +256,6 @@ Trap CPU::execute(Opcode opcode, uint32_t opA, uint32_t opB) {
             return Trap::None;
         }
 
-        // ── Input ────────────────────────────────────────────────────────────
         case Opcode::Input:   checkReg(opA); return Trap::Input;
         case Opcode::Inputc:  checkReg(opA); return Trap::Inputc;
         case Opcode::Setpriority:

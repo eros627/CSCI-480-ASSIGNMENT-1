@@ -5,7 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "MMU.H"
@@ -27,7 +30,7 @@ private:
     CPU cpu_;
     uint32_t nextPid_ = 1;
     std::vector<Process> processes_;
-    std::vector<std::deque<size_t>> ready_;  // index 1..32
+    std::vector<std::deque<size_t>> ready_;   // index 1..32
     std::deque<size_t> sleeping_;
 
     void loadProcessImage_(Process& p, const Program& prog);
@@ -63,6 +66,21 @@ private:
     // Heap allocation (Module 5)
     void handleAlloc_(size_t procIndex);
     void handleFreeMemory_(size_t procIndex);
+
+    // ── Module 6: Virtual Memory ──────────────────────────────────────────────
+    // Simulated disk: (pid, vpage) → saved page bytes
+    std::map<std::pair<uint32_t,uint32_t>, std::vector<uint8_t>> disk_;
+
+    // Reverse map: physical page → (pid, vpage) that currently owns it
+    // Shared OS pages are NOT in this map (they are pinned, never evicted).
+    std::unordered_map<uint32_t, std::pair<uint32_t,uint32_t>> physPageOwner_;
+
+    // Called when CPU throws PageFaultException: brings vpage into RAM.
+    void     handlePageFault_(size_t procIndex, uint32_t vpage);
+
+    // Evict the LRU non-pinned physical page; save to disk_ if dirty.
+    // Returns the reclaimed physical page number (physUsed stays true).
+    uint32_t evictOnePage_();
 };
 
 #endif
